@@ -29,7 +29,12 @@ export const LoginModal: React.FC = () => {
     },
     onError: (errorResponse: any) => {
       console.warn('Google OAuth Popup Note:', errorResponse);
-      setAuthError('Google Sign-In popup closed or origin not whitelisted in Google Cloud Console.');
+      const isMissingClientId = !googleClientId || googleClientId.includes('mock-client-id');
+      if (isMissingClientId) {
+        setAuthError('Google Client ID is not configured. Please use 1-Click Instant Access below or configure VITE_GOOGLE_CLIENT_ID.');
+      } else {
+        setAuthError('Google Sign-In popup was closed or origin is not whitelisted in Google Cloud Console.');
+      }
     },
   });
 

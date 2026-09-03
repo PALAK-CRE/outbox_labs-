@@ -3,8 +3,9 @@ import { prisma } from '../config/prisma.js';
 import { ENV } from '../config/env.js';
 
 export function getSlackOAuthUrl(userId: string): string {
+  const frontendUrl = (ENV.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
   if (!ENV.SLACK_CLIENT_ID) {
-    return `${ENV.FRONTEND_URL}/settings?error=SLACK_CLIENT_ID_MISSING`;
+    return `${frontendUrl}/?error=SLACK_CLIENT_ID_MISSING`;
   }
   const scopes = [
     'incoming-webhook',
@@ -24,6 +25,10 @@ export function getSlackOAuthUrl(userId: string): string {
 }
 
 export async function exchangeSlackCodeForToken(code: string, userId: string) {
+  if (!ENV.SLACK_CLIENT_ID || !ENV.SLACK_CLIENT_SECRET) {
+    throw new Error('Slack OAuth client credentials (SLACK_CLIENT_ID/SECRET) are not configured.');
+  }
+
   const client = new WebClient();
   const response = await client.oauth.v2.access({
     client_id: ENV.SLACK_CLIENT_ID,
@@ -45,8 +50,27 @@ export async function exchangeSlackCodeForToken(code: string, userId: string) {
   const channelId = incomingWebhook?.channel_id || null;
   const botUserId = response.bot_user_id || null;
 
+  // Guarantee valid user foreign key
+  let targetUserId = userId;
+  const userExists = await prisma.user.findUnique({ where: { id: userId } });
+  if (!userExists) {
+    const firstUser = await prisma.user.findFirst();
+    if (firstUser) {
+      targetUserId = firstUser.id;
+    } else {
+      const created = await prisma.user.create({
+        data: {
+          id: userId,
+          email: 'admin@reachinbox.ai',
+          name: 'ReachInbox Admin',
+        },
+      });
+      targetUserId = created.id;
+    }
+  }
+
   const slackIntegration = await prisma.slackIntegration.upsert({
-    where: { userId },
+    where: { userId: targetUserId },
     update: {
       accessToken,
       teamId,
@@ -58,7 +82,7 @@ export async function exchangeSlackCodeForToken(code: string, userId: string) {
       updatedAt: new Date(),
     },
     create: {
-      userId,
+      userId: targetUserId,
       accessToken,
       teamId,
       teamName,

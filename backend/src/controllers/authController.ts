@@ -11,8 +11,8 @@ export class AuthController {
    * Google OAuth Login - supports ID Token, OAuth 2.0 Access Token, Code Exchange, or Tokeninfo verification
    */
   public static async googleLogin(req: Request, res: Response) {
-    const { credential, accessToken, access_token, code } = req.body;
-    const token = credential || accessToken || access_token;
+    const { credential, accessToken, access_token, code, id_token } = req.body || {};
+    const token = credential || accessToken || access_token || id_token;
 
     if (!token && !code) {
       return res.status(400).json({ success: false, error: 'Google credential or access token is required' });
@@ -37,7 +37,7 @@ export class AuthController {
               email = profile.email;
               name = profile.name || profile.given_name || profile.email.split('@')[0];
               avatarUrl = profile.picture || '';
-              googleId = profile.sub || '';
+              googleId = profile.sub || profile.id || '';
             }
           }
         } catch (fetchErr: any) {
@@ -63,9 +63,9 @@ export class AuthController {
             const tokenData: any = await tokenRes.json();
             if (tokenData?.id_token) {
               const decoded: any = jwt.decode(tokenData.id_token);
-              if (decoded && decoded.email) {
+              if (decoded && typeof decoded === 'object' && decoded.email) {
                 email = decoded.email;
-                name = decoded.name || decoded.email.split('@')[0];
+                name = decoded.name || decoded.given_name || decoded.email.split('@')[0];
                 avatarUrl = decoded.picture || '';
                 googleId = decoded.sub || '';
               }
@@ -76,7 +76,7 @@ export class AuthController {
               if (uRes.ok) {
                 const profile: any = await uRes.json();
                 email = profile.email;
-                name = profile.name || profile.email.split('@')[0];
+                name = profile.name || profile.given_name || profile.email.split('@')[0];
                 avatarUrl = profile.picture || '';
                 googleId = profile.sub || '';
               }
@@ -87,20 +87,21 @@ export class AuthController {
         }
       }
 
-      // 3. If ID Token (credential) is provided
-      if (!email && credential) {
+      // 3. If ID Token (credential / id_token) is provided
+      const rawIdToken = credential || id_token;
+      if (!email && rawIdToken) {
         // Try google-auth-library verifyIdToken
         if (ENV.GOOGLE_CLIENT_ID) {
           try {
             const client = new OAuth2Client(ENV.GOOGLE_CLIENT_ID);
             const ticket = await client.verifyIdToken({
-              idToken: credential,
+              idToken: rawIdToken,
               audience: ENV.GOOGLE_CLIENT_ID,
             });
             const payload = ticket.getPayload();
             if (payload && payload.email) {
               email = payload.email;
-              name = payload.name || payload.email.split('@')[0];
+              name = payload.name || payload.given_name || payload.email.split('@')[0];
               avatarUrl = payload.picture || '';
               googleId = payload.sub || '';
             }
@@ -112,12 +113,12 @@ export class AuthController {
         // Try Google's official tokeninfo endpoint if verifyIdToken didn't resolve
         if (!email) {
           try {
-            const tokeninfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+            const tokeninfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(rawIdToken)}`);
             if (tokeninfoRes.ok) {
               const payload: any = await tokeninfoRes.json();
               if (payload?.email) {
                 email = payload.email;
-                name = payload.name || payload.email.split('@')[0];
+                name = payload.name || payload.given_name || payload.email.split('@')[0];
                 avatarUrl = payload.picture || '';
                 googleId = payload.sub || '';
               }
@@ -129,12 +130,16 @@ export class AuthController {
 
         // Fallback JWT decoder
         if (!email) {
-          const decoded: any = jwt.decode(credential);
-          if (decoded && decoded.email) {
-            email = decoded.email;
-            name = decoded.name || decoded.email.split('@')[0];
-            avatarUrl = decoded.picture || '';
-            googleId = decoded.sub || '';
+          try {
+            const decoded: any = jwt.decode(rawIdToken);
+            if (decoded && typeof decoded === 'object' && decoded.email) {
+              email = decoded.email;
+              name = decoded.name || decoded.given_name || decoded.email.split('@')[0];
+              avatarUrl = decoded.picture || '';
+              googleId = decoded.sub || '';
+            }
+          } catch (jwtErr: any) {
+            console.warn('JWT decode note:', jwtErr.message);
           }
         }
       }
@@ -143,18 +148,36 @@ export class AuthController {
         return res.status(400).json({ success: false, error: 'Could not verify or decode Google credentials.' });
       }
 
-      const updateData: any = { name, avatarUrl };
-      const createData: any = { email, name, avatarUrl };
-      if (googleId) {
-        updateData.googleId = googleId;
-        createData.googleId = googleId;
-      }
-
-      const user = await prisma.user.upsert({
-        where: { email },
-        update: updateData,
-        create: createData,
+      // Safe DB Upsert that avoids unique constraint violations on googleId or email
+      let user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email },
+            ...(googleId ? [{ googleId }] : [])
+          ]
+        }
       });
+
+      if (user) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email,
+            name: name || user.name,
+            avatarUrl: avatarUrl || user.avatarUrl,
+            ...(googleId ? { googleId } : {})
+          }
+        });
+      } else {
+        user = await prisma.user.create({
+          data: {
+            email,
+            name,
+            avatarUrl,
+            ...(googleId ? { googleId } : {})
+          }
+        });
+      }
 
       const authToken = jwt.sign(
         { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },

@@ -18,22 +18,23 @@ export class SlackController {
    */
   public static async oauthRedirect(req: Request, res: Response) {
     const { code, state: userId, error } = req.query;
+    const frontendUrl = (ENV.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
 
     if (error) {
       console.warn('⚠️ Slack OAuth error from Slack:', error);
-      return res.redirect(`${ENV.FRONTEND_URL}/?slack_error=${encodeURIComponent(error as string)}`);
+      return res.redirect(`${frontendUrl}/?slack_error=${encodeURIComponent(error as string)}`);
     }
 
     if (!code || !userId) {
-      return res.redirect(`${ENV.FRONTEND_URL}/?slack_error=missing_code_or_user`);
+      return res.redirect(`${frontendUrl}/?slack_error=missing_code_or_user`);
     }
 
     try {
       await exchangeSlackCodeForToken(code as string, userId as string);
-      return res.redirect(`${ENV.FRONTEND_URL}/?slack_connected=true`);
+      return res.redirect(`${frontendUrl}/?slack_connected=true`);
     } catch (err: any) {
       console.error('❌ Failed to exchange Slack code:', err.message);
-      return res.redirect(`${ENV.FRONTEND_URL}/?slack_error=${encodeURIComponent(err.message)}`);
+      return res.redirect(`${frontendUrl}/?slack_error=${encodeURIComponent(err.message)}`);
     }
   }
 
@@ -111,15 +112,33 @@ export class SlackController {
    * Direct Webhook connect (optional convenience for manual webhook URL entry)
    */
   public static async connectWebhook(req: Request, res: Response) {
-    const userId = req.user?.id || 'demo-user-id-001';
+    const rawUserId = req.user?.id || 'demo-user-id-001';
     const { webhookUrl, teamName = 'Custom Slack Workspace', channelName = '#alerts' } = req.body;
 
     if (!webhookUrl || !webhookUrl.startsWith('https://hooks.slack.com/')) {
       return res.status(400).json({ success: false, error: 'Invalid Slack Incoming Webhook URL' });
     }
 
+    let targetUserId = rawUserId;
+    const userExists = await prisma.user.findUnique({ where: { id: rawUserId } });
+    if (!userExists) {
+      const firstUser = await prisma.user.findFirst();
+      if (firstUser) {
+        targetUserId = firstUser.id;
+      } else {
+        const created = await prisma.user.create({
+          data: {
+            id: rawUserId,
+            email: 'admin@reachinbox.ai',
+            name: 'ReachInbox Admin',
+          },
+        });
+        targetUserId = created.id;
+      }
+    }
+
     const integration = await prisma.slackIntegration.upsert({
-      where: { userId },
+      where: { userId: targetUserId },
       update: {
         webhookUrl,
         teamName,
@@ -128,7 +147,7 @@ export class SlackController {
         updatedAt: new Date(),
       },
       create: {
-        userId,
+        userId: targetUserId,
         webhookUrl,
         teamName,
         channelName,
