@@ -8,13 +8,14 @@ const googleClient = new OAuth2Client(ENV.GOOGLE_CLIENT_ID);
 
 export class AuthController {
   /**
-   * Google OAuth Login via ID Token (from Google Identity / @react-oauth/google)
+   * Google OAuth Login - supports ID Token, OAuth 2.0 Access Token, Code Exchange, or Tokeninfo verification
    */
   public static async googleLogin(req: Request, res: Response) {
-    const { credential } = req.body;
+    const { credential, accessToken, access_token, code } = req.body;
+    const token = credential || accessToken || access_token;
 
-    if (!credential) {
-      return res.status(400).json({ success: false, error: 'Google credential token is required' });
+    if (!token && !code) {
+      return res.status(400).json({ success: false, error: 'Google credential or access token is required' });
     }
 
     try {
@@ -23,41 +24,123 @@ export class AuthController {
       let avatarUrl = '';
       let googleId = '';
 
-      if (ENV.GOOGLE_CLIENT_ID) {
+      // 1. If an access_token was provided (e.g. from useGoogleLogin popup flow)
+      if (accessToken || access_token) {
+        const rawToken = accessToken || access_token;
         try {
-          const ticket = await googleClient.verifyIdToken({
-            idToken: credential,
-            audience: ENV.GOOGLE_CLIENT_ID,
+          const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${rawToken}` },
           });
-          const payload = ticket.getPayload();
-          if (payload && payload.email) {
-            email = payload.email;
-            name = payload.name || payload.email.split('@')[0];
-            avatarUrl = payload.picture || '';
-            googleId = payload.sub || '';
+          if (userinfoRes.ok) {
+            const profile: any = await userinfoRes.json();
+            if (profile?.email) {
+              email = profile.email;
+              name = profile.name || profile.given_name || profile.email.split('@')[0];
+              avatarUrl = profile.picture || '';
+              googleId = profile.sub || '';
+            }
           }
-        } catch (verifyErr: any) {
-          console.warn('Google verifyIdToken note:', verifyErr.message);
+        } catch (fetchErr: any) {
+          console.warn('Google userinfo fetch note:', fetchErr.message);
+        }
+      }
+
+      // 2. If an authorization code was provided
+      if (!email && code && ENV.GOOGLE_CLIENT_ID && ENV.GOOGLE_CLIENT_SECRET) {
+        try {
+          const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+              code,
+              client_id: ENV.GOOGLE_CLIENT_ID,
+              client_secret: ENV.GOOGLE_CLIENT_SECRET,
+              redirect_uri: 'postmessage',
+              grant_type: 'authorization_code',
+            }),
+          });
+          if (tokenRes.ok) {
+            const tokenData: any = await tokenRes.json();
+            if (tokenData?.id_token) {
+              const decoded: any = jwt.decode(tokenData.id_token);
+              if (decoded && decoded.email) {
+                email = decoded.email;
+                name = decoded.name || decoded.email.split('@')[0];
+                avatarUrl = decoded.picture || '';
+                googleId = decoded.sub || '';
+              }
+            } else if (tokenData?.access_token) {
+              const uRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenData.access_token}` },
+              });
+              if (uRes.ok) {
+                const profile: any = await uRes.json();
+                email = profile.email;
+                name = profile.name || profile.email.split('@')[0];
+                avatarUrl = profile.picture || '';
+                googleId = profile.sub || '';
+              }
+            }
+          }
+        } catch (codeErr: any) {
+          console.warn('Google code exchange note:', codeErr.message);
+        }
+      }
+
+      // 3. If ID Token (credential) is provided
+      if (!email && credential) {
+        // Try google-auth-library verifyIdToken
+        if (ENV.GOOGLE_CLIENT_ID) {
+          try {
+            const client = new OAuth2Client(ENV.GOOGLE_CLIENT_ID);
+            const ticket = await client.verifyIdToken({
+              idToken: credential,
+              audience: ENV.GOOGLE_CLIENT_ID,
+            });
+            const payload = ticket.getPayload();
+            if (payload && payload.email) {
+              email = payload.email;
+              name = payload.name || payload.email.split('@')[0];
+              avatarUrl = payload.picture || '';
+              googleId = payload.sub || '';
+            }
+          } catch (verifyErr: any) {
+            console.warn('Google verifyIdToken note:', verifyErr.message);
+          }
+        }
+
+        // Try Google's official tokeninfo endpoint if verifyIdToken didn't resolve
+        if (!email) {
+          try {
+            const tokeninfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+            if (tokeninfoRes.ok) {
+              const payload: any = await tokeninfoRes.json();
+              if (payload?.email) {
+                email = payload.email;
+                name = payload.name || payload.email.split('@')[0];
+                avatarUrl = payload.picture || '';
+                googleId = payload.sub || '';
+              }
+            }
+          } catch (tokeninfoErr: any) {
+            console.warn('Google tokeninfo endpoint note:', tokeninfoErr.message);
+          }
+        }
+
+        // Fallback JWT decoder
+        if (!email) {
           const decoded: any = jwt.decode(credential);
           if (decoded && decoded.email) {
             email = decoded.email;
             name = decoded.name || decoded.email.split('@')[0];
             avatarUrl = decoded.picture || '';
             googleId = decoded.sub || '';
-          } else {
-            return res.status(400).json({ success: false, error: 'Invalid Google credential token' });
           }
         }
-      } else {
-        // Fallback decoder if Client ID not set locally
-        const decoded: any = jwt.decode(credential);
-        if (!decoded || !decoded.email) {
-          return res.status(400).json({ success: false, error: 'Cannot decode Google token' });
-        }
-        email = decoded.email;
-        name = decoded.name || decoded.email.split('@')[0];
-        avatarUrl = decoded.picture || '';
-        googleId = decoded.sub || '';
+      }
+
+      if (!email) {
+        return res.status(400).json({ success: false, error: 'Could not verify or decode Google credentials.' });
       }
 
       const updateData: any = { name, avatarUrl };
@@ -73,7 +156,7 @@ export class AuthController {
         create: createData,
       });
 
-      const token = jwt.sign(
+      const authToken = jwt.sign(
         { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
         ENV.JWT_SECRET,
         { expiresIn: '7d' }
@@ -81,7 +164,7 @@ export class AuthController {
 
       return res.json({
         success: true,
-        token,
+        token: authToken,
         user: {
           id: user.id,
           email: user.email,

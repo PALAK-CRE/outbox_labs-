@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   slackStatus: SlackStatus | null;
-  loginWithGoogle: (credential: string) => Promise<void>;
+  loginWithGoogle: (data: string | { credential?: string; accessToken?: string; access_token?: string; code?: string }) => Promise<void>;
   loginWithDemo: (name?: string, email?: string) => Promise<void>;
   logout: () => void;
   refreshSlackStatus: () => Promise<void>;
@@ -65,10 +65,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const loginWithGoogle = async (credential: string) => {
+  const loginWithGoogle = async (data: string | { credential?: string; accessToken?: string; access_token?: string; code?: string }) => {
     setLoading(true);
     try {
-      const res = await ApiService.loginWithGoogle(credential);
+      const res = await ApiService.loginWithGoogle(data);
       localStorage.setItem('reachinbox_auth_token', res.token);
       setUser(res.user);
       await refreshSlackStatus();

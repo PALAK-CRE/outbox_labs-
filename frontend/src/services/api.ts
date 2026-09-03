@@ -21,8 +21,9 @@ api.interceptors.request.use((config) => {
 
 export const ApiService = {
   // Auth
-  async loginWithGoogle(credential: string): Promise<{ token: string; user: User }> {
-    const res = await api.post('/auth/google', { credential });
+  async loginWithGoogle(data: string | { credential?: string; accessToken?: string; access_token?: string; code?: string }): Promise<{ token: string; user: User }> {
+    const payload = typeof data === 'string' ? { credential: data } : data;
+    const res = await api.post('/auth/google', payload);
     return res.data;
   },
 

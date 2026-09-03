@@ -5,8 +5,10 @@ dotenv.config();
 
 const clean = (val?: string): string => (val ? val.replace(/^["']|["']$/g, '').trim() : '');
 
+const PORT = parseInt(process.env.PORT || '5001', 10);
+
 export const ENV = {
-  PORT: parseInt(process.env.PORT || '5001', 10),
+  PORT,
   NODE_ENV: clean(process.env.NODE_ENV) || 'development',
   FRONTEND_URL: clean(process.env.FRONTEND_URL) || 'http://localhost:5173',
   DATABASE_URL: clean(process.env.DATABASE_URL) || 'postgresql://postgres:postgres@localhost:5432/reachinbox_scheduler?schema=public',
@@ -25,24 +27,24 @@ export const ENV = {
   MAX_EMAILS_PER_HOUR: parseInt(process.env.MAX_EMAILS_PER_HOUR || '200', 10),
   MAX_EMAILS_PER_HOUR_PER_SENDER: parseInt(process.env.MAX_EMAILS_PER_HOUR_PER_SENDER || '50', 10),
 
-  JWT_SECRET: process.env.JWT_SECRET || 'super-secret-reachinbox-jwt-key-2025',
+  JWT_SECRET: clean(process.env.JWT_SECRET) || 'super-secret-reachinbox-jwt-key-2025',
 
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
-  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
+  GOOGLE_CLIENT_ID: clean(process.env.GOOGLE_CLIENT_ID) || '',
+  GOOGLE_CLIENT_SECRET: clean(process.env.GOOGLE_CLIENT_SECRET) || '',
 
-  SLACK_CLIENT_ID: process.env.SLACK_CLIENT_ID || '',
-  SLACK_CLIENT_SECRET: process.env.SLACK_CLIENT_SECRET || '',
-  SLACK_REDIRECT_URI: process.env.SLACK_REDIRECT_URI || 'http://localhost:5000/api/slack/oauth_redirect',
-  SLACK_TEST_WEBHOOK_URL: process.env.SLACK_TEST_WEBHOOK_URL || '',
+  SLACK_CLIENT_ID: clean(process.env.SLACK_CLIENT_ID) || '',
+  SLACK_CLIENT_SECRET: clean(process.env.SLACK_CLIENT_SECRET) || '',
+  SLACK_REDIRECT_URI: clean(process.env.SLACK_REDIRECT_URI) || `http://localhost:${PORT}/api/slack/oauth_redirect`,
+  SLACK_TEST_WEBHOOK_URL: clean(process.env.SLACK_TEST_WEBHOOK_URL) || '',
 
   // SMTP Configuration (Real Gmail, Outlook, or Ethereal Fake SMTP)
-  SMTP_HOST: process.env.SMTP_HOST || '',
+  SMTP_HOST: clean(process.env.SMTP_HOST) || '',
   SMTP_PORT: parseInt(process.env.SMTP_PORT || '587', 10),
   SMTP_SECURE: process.env.SMTP_SECURE === 'true',
-  SMTP_USER: process.env.SMTP_USER || process.env.ETHEREAL_USER || '',
-  SMTP_PASS: process.env.SMTP_PASS || process.env.ETHEREAL_PASS || '',
-  SMTP_FROM_NAME: process.env.SMTP_FROM_NAME || 'ReachInbox Outreach',
+  SMTP_USER: clean(process.env.SMTP_USER) || clean(process.env.ETHEREAL_USER) || '',
+  SMTP_PASS: clean(process.env.SMTP_PASS) || clean(process.env.ETHEREAL_PASS) || '',
+  SMTP_FROM_NAME: clean(process.env.SMTP_FROM_NAME) || 'ReachInbox Outreach',
 
-  ETHEREAL_USER: process.env.ETHEREAL_USER || '',
-  ETHEREAL_PASS: process.env.ETHEREAL_PASS || '',
+  ETHEREAL_USER: clean(process.env.ETHEREAL_USER) || '',
+  ETHEREAL_PASS: clean(process.env.ETHEREAL_PASS) || '',
 };
