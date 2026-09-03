@@ -21,7 +21,7 @@ const app = express();
 
 // Middlewares
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow non-browser requests or same-origin
     if (!origin) return callback(null, true);
     if (
@@ -53,7 +53,7 @@ createBullBoard({
 app.use('/admin/queues', serverAdapter.getRouter());
 
 // Health Check
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
   res.json({
     status: 'ok',
     service: 'ReachInbox Email Scheduler',
