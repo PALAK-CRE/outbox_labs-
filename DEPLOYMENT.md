@@ -9,7 +9,7 @@ This repository is pre-configured for seamless deployment of the **Frontend to V
 Initialize and push your repository to GitHub:
 
 ```bash
-# In the project root (/Users/ansh/Desktop/Outbox)
+# In the project root
 git add .
 git commit -m "feat: complete reachinbox cold email scheduler with vercel & render deployment configs"
 

@@ -111,10 +111,9 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
 
   const loadSampleLeads = () => {
     const sample = [
-      'ansh.agarwal.cs27@iilm.edu',
       'kaddambinee.yadav.cs27@iilm.edu',
-      'alex.hunter@reachinbox.ai',
       'sarah.connor@outboxlabs.com',
+      'alex.hunter@reachinbox.ai',
     ].join('\n');
     setManualRecipients(sample);
     setSubject('Supercharging Your Cold Outreach with ReachInbox 🚀');
@@ -270,7 +269,7 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({ isOpen, onClose, onS
                   rows={4}
                   value={manualRecipients}
                   onChange={(e) => setManualRecipients(e.target.value)}
-                  placeholder="Paste email addresses (separated by commas or newlines)...&#10;ansh.agarwal.cs27@iilm.edu&#10;lead@domain.com"
+                  placeholder="Paste email addresses (separated by commas or newlines)...&#10;kaddambinee.yadav.cs27@iilm.edu&#10;lead@domain.com"
                   className="w-full px-3 py-2 text-xs bg-slate-900/90 border border-slate-700/80 rounded-xl text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>

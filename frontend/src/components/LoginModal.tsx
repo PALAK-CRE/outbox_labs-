@@ -167,11 +167,11 @@ export const LoginModal: React.FC = () => {
         <div className="space-y-2.5 mt-2 mb-4">
           <button
             type="button"
-            onClick={() => handleQuickGoogleSignIn('Ansh Agarwal', 'anshagar2810@gmail.com')}
+            onClick={() => handleQuickGoogleSignIn('Kaddambinee', 'yadavkaddambinee@gmail.com')}
             className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl text-xs font-semibold text-slate-100 bg-slate-800 hover:bg-slate-700 border border-slate-700 shadow-sm transition-all group"
           >
             <LogIn className="w-3.5 h-3.5 text-blue-400" />
-            <span>Instant Access: <strong className="text-white">anshagar2810@gmail.com</strong></span>
+            <span>Instant Access: <strong className="text-white">yadavkaddambinee@gmail.com</strong></span>
             <ArrowRight className="h-3.5 w-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform ml-auto" />
           </button>
 
@@ -187,7 +187,7 @@ export const LoginModal: React.FC = () => {
             <form onSubmit={handleCustomLogin} className="space-y-2 pt-2 text-left">
               <input
                 type="text"
-                placeholder="Your Name (e.g. Ansh Agarwal)"
+                placeholder="Your Name (e.g. Kaddambinee)"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
