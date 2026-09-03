@@ -3,19 +3,22 @@ import path from 'path';
 
 dotenv.config();
 
+const clean = (val?: string): string => (val ? val.replace(/^["']|["']$/g, '').trim() : '');
+
 export const ENV = {
   PORT: parseInt(process.env.PORT || '5001', 10),
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
-  DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/reachinbox_scheduler?schema=public',
+  NODE_ENV: clean(process.env.NODE_ENV) || 'development',
+  FRONTEND_URL: clean(process.env.FRONTEND_URL) || 'http://localhost:5173',
+  DATABASE_URL: clean(process.env.DATABASE_URL) || 'postgresql://postgres:postgres@localhost:5432/reachinbox_scheduler?schema=public',
   
-  REDIS_URL: process.env.REDIS_URL || '',
-  REDIS_HOST: process.env.REDIS_HOST || 'localhost',
+  ENABLE_REDIS: process.env.ENABLE_REDIS !== undefined ? process.env.ENABLE_REDIS === 'true' : Boolean(clean(process.env.REDIS_URL)),
+  REDIS_URL: clean(process.env.REDIS_URL),
+  REDIS_HOST: clean(process.env.REDIS_HOST) || 'localhost',
   REDIS_PORT: parseInt(process.env.REDIS_PORT || '6379', 10),
-  REDIS_PASSWORD: process.env.REDIS_PASSWORD || undefined,
+  REDIS_PASSWORD: clean(process.env.REDIS_PASSWORD) || undefined,
 
-  ELASTICSEARCH_NODE: process.env.ELASTICSEARCH_NODE || 'http://localhost:9200',
-  ELASTICSEARCH_INDEX: process.env.ELASTICSEARCH_INDEX || 'emails',
+  ELASTICSEARCH_NODE: clean(process.env.ELASTICSEARCH_NODE) || 'http://localhost:9200',
+  ELASTICSEARCH_INDEX: clean(process.env.ELASTICSEARCH_INDEX) || 'emails',
 
   WORKER_CONCURRENCY: parseInt(process.env.WORKER_CONCURRENCY || '5', 10),
   MIN_EMAIL_DELAY_MS: parseInt(process.env.MIN_EMAIL_DELAY_MS || '2000', 10),

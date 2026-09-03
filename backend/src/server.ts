@@ -41,16 +41,30 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// BullMQ Live Dashboard setup with @bull-board
-const serverAdapter = new ExpressAdapter();
-serverAdapter.setBasePath('/admin/queues');
+import { isRedisEnabled } from './config/redis.js';
+import { InMemoryScheduler } from './queue/inMemoryScheduler.js';
 
-createBullBoard({
-  queues: [new BullMQAdapter(emailQueue)],
-  serverAdapter: serverAdapter,
-});
+// BullMQ Live Dashboard setup with @bull-board (if Redis enabled)
+if (isRedisEnabled) {
+  const serverAdapter = new ExpressAdapter();
+  serverAdapter.setBasePath('/admin/queues');
 
-app.use('/admin/queues', serverAdapter.getRouter());
+  createBullBoard({
+    queues: [new BullMQAdapter(emailQueue)],
+    serverAdapter: serverAdapter,
+  });
+
+  app.use('/admin/queues', serverAdapter.getRouter());
+} else {
+  app.get('/admin/queues', (req: express.Request, res: express.Response) => {
+    res.json({
+      status: 'active',
+      mode: 'In-Memory / Database Scheduler',
+      description: 'Emails are scheduled and processed reliably directly via PostgreSQL and Node timer scheduler.',
+      redisEnabled: false,
+    });
+  });
+}
 
 // Health Check
 app.get('/health', (req: express.Request, res: express.Response) => {
@@ -59,6 +73,7 @@ app.get('/health', (req: express.Request, res: express.Response) => {
     service: 'ReachInbox Email Scheduler',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    redisEnabled: isRedisEnabled,
   });
 });
 
@@ -82,13 +97,17 @@ async function bootstrap() {
   // 2. Initialize Elasticsearch index
   await initElasticsearch();
 
-  // 3. Start BullMQ Worker
-  startEmailWorker();
+  // 3. Start BullMQ Worker or InMemory Scheduler
+  if (isRedisEnabled) {
+    startEmailWorker();
+  } else {
+    InMemoryScheduler.start();
+  }
 
   // 4. Start HTTP Server
   const server = app.listen(ENV.PORT, () => {
     console.log(`🌐 Server running on http://localhost:${ENV.PORT}`);
-    console.log(`📊 BullMQ Live Dashboard: http://localhost:${ENV.PORT}/admin/queues`);
+    console.log(`📊 Mode: ${isRedisEnabled ? 'BullMQ + Redis' : 'In-Memory + Database Scheduler'}`);
     console.log(`🔗 API Base: http://localhost:${ENV.PORT}/api`);
   });
 

@@ -1,27 +1,38 @@
 import { Queue, JobsOptions } from 'bullmq';
-import { redisConnectionOptions } from '../config/redis.js';
+import { redisConnectionOptions, isRedisEnabled } from '../config/redis.js';
 import { EmailJobPayload, EmailAttachment } from '../types/index.js';
 import { prisma } from '../config/prisma.js';
 import { SearchService } from '../services/searchService.js';
+import { InMemoryScheduler } from './inMemoryScheduler.js';
 
 export const EMAIL_QUEUE_NAME = 'email-queue';
 
-export const emailQueue = new Queue<EmailJobPayload>(EMAIL_QUEUE_NAME, {
-  connection: redisConnectionOptions,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000,
-    },
-    removeOnComplete: false,
-    removeOnFail: false,
-  },
-});
+export const emailQueue: any = isRedisEnabled
+  ? new Queue<EmailJobPayload>(EMAIL_QUEUE_NAME, {
+      connection: redisConnectionOptions,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 5000,
+        },
+        removeOnComplete: false,
+        removeOnFail: false,
+      },
+    })
+  : {
+      getWaitingCount: async () => 0,
+      getActiveCount: async () => 0,
+      getDelayedCount: async () => 0,
+      getCompletedCount: async () => 0,
+      getFailedCount: async () => 0,
+      add: async () => ({ id: `mem_${Date.now()}` }),
+      getJob: async () => null,
+    };
 
 export class EmailSchedulerQueue {
   /**
-   * Schedules a single email job at a specific target time using BullMQ delayed jobs
+   * Schedules a single email job at a specific target time using BullMQ delayed jobs or In-Memory Scheduler
    */
   public static async scheduleEmailJob(params: {
     emailJobId: string;
@@ -40,11 +51,6 @@ export class EmailSchedulerQueue {
     const targetTime = params.scheduledAt.getTime();
     const delay = Math.max(0, targetTime - now);
 
-    const jobOptions: JobsOptions = {
-      jobId: `email_job_${params.emailJobId}`,
-      delay,
-    };
-
     const payload: EmailJobPayload = {
       jobId: params.emailJobId,
       userId: params.userId,
@@ -59,19 +65,30 @@ export class EmailSchedulerQueue {
       scheduledAt: params.scheduledAt.toISOString(),
     };
 
-    const bullJob = await emailQueue.add('send-email', payload, jobOptions);
+    let assignedJobId = `job_${params.emailJobId}`;
 
-    // Update job with BullMQ Job ID
+    if (isRedisEnabled && emailQueue?.add) {
+      const jobOptions: JobsOptions = {
+        jobId: `email_job_${params.emailJobId}`,
+        delay,
+      };
+      const bullJob = await emailQueue.add('send-email', payload, jobOptions);
+      assignedJobId = bullJob.id as string;
+    } else {
+      InMemoryScheduler.scheduleJobInMemory(payload, delay);
+    }
+
+    // Update job with Job ID
     await prisma.emailJob.update({
       where: { id: params.emailJobId },
       data: {
-        bullJobId: bullJob.id,
+        bullJobId: assignedJobId,
         status: 'SCHEDULED',
       },
     });
 
     console.log(`⏱️ [Scheduler] Scheduled email ${params.emailJobId} to ${params.recipientEmail} with ${delay}ms delay (at ${params.scheduledAt.toISOString()})`);
-    return { bullJobId: bullJob.id as string };
+    return { bullJobId: assignedJobId };
   }
 
   /**
@@ -133,7 +150,7 @@ export class EmailSchedulerQueue {
       // Index in Elasticsearch
       SearchService.indexEmail(emailJob).catch(() => {});
 
-      // Add to BullMQ delayed queue with attachments
+      // Add to queue with attachments
       await this.scheduleEmailJob({
         emailJobId: emailJob.id,
         userId: params.userId,
@@ -164,11 +181,13 @@ export class EmailSchedulerQueue {
     const job = await prisma.emailJob.findUnique({ where: { id: jobId } });
     if (!job) throw new Error('Email job not found');
 
-    if (job.bullJobId) {
+    if (isRedisEnabled && job.bullJobId && emailQueue?.getJob) {
       const bullJob = await emailQueue.getJob(job.bullJobId);
       if (bullJob) {
         await bullJob.remove();
       }
+    } else {
+      InMemoryScheduler.cancelJob(jobId);
     }
 
     const updated = await prisma.emailJob.update({
@@ -187,15 +206,17 @@ export class EmailSchedulerQueue {
     const job = await prisma.emailJob.findUnique({ where: { id: jobId } });
     if (!job) throw new Error('Email job not found');
 
-    // Remove existing bull job if any
-    if (job.bullJobId) {
+    // Remove existing bull job or timer if any
+    if (isRedisEnabled && job.bullJobId && emailQueue?.getJob) {
       const bullJob = await emailQueue.getJob(job.bullJobId);
       if (bullJob) {
         await bullJob.remove();
       }
+    } else {
+      InMemoryScheduler.cancelJob(jobId);
     }
 
-    // Add new delayed job
+    // Add new scheduled job
     const { bullJobId } = await this.scheduleEmailJob({
       emailJobId: job.id,
       userId: job.userId,
