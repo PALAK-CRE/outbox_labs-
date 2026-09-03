@@ -1,0 +1,134 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum JobStatus {
+  SCHEDULED
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  RESCHEDULED
+  CANCELLED
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  name             String
+  avatarUrl        String?
+  googleId         String?           @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  slackIntegration SlackIntegration?
+  campaigns        EmailBatch[]
+  emailJobs        EmailJob[]
+
+  @@map("users")
+}
+
+model Sender {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  name      String
+  host      String?    @default("smtp.ethereal.email")
+  port      Int?       @default(587)
+  user      String?
+  pass      String?
+  isDefault Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  emailJobs EmailJob[]
+
+  @@map("senders")
+}
+
+model EmailBatch {
+  id                 String     @id @default(uuid())
+  userId             String
+  user               User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name               String
+  subject            String
+  body               String
+  totalEmails        Int        @default(0)
+  scheduledCount     Int        @default(0)
+  sentCount          Int        @default(0)
+  failedCount        Int        @default(0)
+  delayBetweenMs     Int        @default(2000)
+  hourlyLimit        Int        @default(200)
+  scheduledStartTime DateTime
+  status             String     @default("PENDING") // PENDING, PROCESSING, COMPLETED, CANCELLED
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  emailJobs          EmailJob[]
+
+  @@index([userId])
+  @@map("email_batches")
+}
+
+model EmailJob {
+  id                 String      @id @default(uuid())
+  bullJobId          String?     @unique
+  userId             String
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batchId            String?
+  batch              EmailBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  senderId           String?
+  sender             Sender?     @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  senderEmail        String
+  recipientEmail     String
+  subject            String
+  body               String
+  status             JobStatus   @default(SCHEDULED)
+  scheduledAt        DateTime
+  sentAt             DateTime?
+  attempts           Int         @default(0)
+  maxAttempts        Int         @default(3)
+  delayBetweenMs     Int         @default(2000)
+  hourlyLimit        Int         @default(200)
+  etherealMessageUrl String?
+  errorMessage       String?
+  lastWindowKey      String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@index([userId, status])
+  @@index([scheduledAt])
+  @@index([senderEmail, status])
+  @@map("email_jobs")
+}
+
+model SlackIntegration {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId      String?
+  teamName    String?
+  channelId   String?
+  channelName String?
+  accessToken String
+  botUserId   String?
+  webhookUrl  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("slack_integrations")
+}
+
+model RateLimitLog {
+  id             String   @id @default(uuid())
+  senderEmail    String
+  windowKey      String
+  count          Int
+  limit          Int
+  triggeredSlack Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([senderEmail, windowKey])
+  @@map("rate_limit_logs")
+}

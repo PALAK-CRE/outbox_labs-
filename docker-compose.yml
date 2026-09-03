@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: reachinbox_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: reachinbox_scheduler
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reachinbox_scheduler"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for BullMQ & Sliding Window Rate Limiting
+  redis:
+    image: redis:7-alpine
+    container_name: reachinbox_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Elasticsearch for full-text search indexing
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: reachinbox_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  # Express + BullMQ Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.backend
+    container_name: reachinbox_backend
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://postgres:postgrespassword@postgres:5432/reachinbox_scheduler?schema=public"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ELASTICSEARCH_NODE: "http://elasticsearch:9200"
+      ELASTICSEARCH_INDEX: emails
+      WORKER_CONCURRENCY: 5
+      MIN_EMAIL_DELAY_MS: 2000
+      MAX_EMAILS_PER_HOUR: 200
+      MAX_EMAILS_PER_HOUR_PER_SENDER: 50
+      FRONTEND_URL: "http://localhost:5173"
+      JWT_SECRET: "super-secret-reachinbox-jwt-key-2025"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Next.js / Vite React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend
+    container_name: reachinbox_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: "http://localhost:5000/api"
+      VITE_BULL_BOARD_URL: "http://localhost:5000/admin/queues"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  es_data:
